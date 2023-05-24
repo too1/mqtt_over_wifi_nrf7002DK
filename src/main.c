@@ -53,6 +53,9 @@ K_SEM_DEFINE(wifi_connected_sem, 0, 1);
 #define ADV_DAEMON_STACK_SIZE 4096
 #define ADV_DAEMON_PRIORITY 5
 
+#define NETWORK_SSID "EmeaWorkshop"
+#define NETWORK_PWD  "BillionBluetooth"
+
 /* The mqtt client struct */
 static struct mqtt_client client;
 /* File descriptor */
@@ -379,7 +382,6 @@ static void wifi_connect_handler(struct net_mgmt_event_callback *cb,
 void main(void)
 {
 	int rc;
-	struct wifi_credentials_personal config = { 0 };
 	struct net_if *iface = net_if_get_default();
 	struct wifi_connect_req_params cnx_params = { 0 };
 	struct net_linkaddr *mac_addr = net_if_get_link_addr(iface);
@@ -436,37 +438,33 @@ void main(void)
 				K_SECONDS(ADV_DATA_UPDATE_INTERVAL));
 #endif /* CONFIG_WIFI_PROV_ADV_DATA_UPDATE */
 
-	/* Search for stored wifi credential and apply */
-	wifi_credentials_for_each_ssid(get_wifi_credential, &config);
-	if (config.header.ssid_len > 0) {
-		LOG_INF("Configuration found. Try to apply.\n");
+	LOG_INF("Using static Wi-Fi configuration\n");
+	char *wifi_static_ssid = NETWORK_SSID;
+	char *wifi_static_pwd = NETWORK_PWD;
 
-		cnx_params.ssid = config.header.ssid;
-		cnx_params.ssid_length = config.header.ssid_len;
-		cnx_params.security = config.header.type;
+	cnx_params.ssid = wifi_static_ssid;
+	cnx_params.ssid_length = strlen(wifi_static_ssid);
+	cnx_params.security = WIFI_SECURITY_TYPE_PSK;
 
-		cnx_params.psk = NULL;
-		cnx_params.psk_length = 0;
-		cnx_params.sae_password = NULL;
-		cnx_params.sae_password_length = 0;
+	cnx_params.psk = NULL;
+	cnx_params.psk_length = 0;
+	cnx_params.sae_password = NULL;
+	cnx_params.sae_password_length = 0;
 
-		if (config.header.type != WIFI_SECURITY_TYPE_NONE) {
-			cnx_params.psk = config.password;
-			cnx_params.psk_length = config.password_len;
-		}
+	cnx_params.psk = wifi_static_pwd;
+	cnx_params.psk_length = strlen(wifi_static_pwd);
 
-		cnx_params.channel = WIFI_CHANNEL_ANY;
-		cnx_params.band = config.header.flags & WIFI_CREDENTIALS_FLAG_5GHz ?
-				WIFI_FREQ_BAND_5_GHZ : WIFI_FREQ_BAND_2_4_GHZ;
-		cnx_params.mfp = WIFI_MFP_OPTIONAL;
-		rc = net_mgmt(NET_REQUEST_WIFI_CONNECT, iface,
-			&cnx_params, sizeof(struct wifi_connect_req_params));
-		if (rc < 0) {
-			LOG_ERR("Cannot apply saved Wi-Fi configuration, err = %d.\n", rc);
-		} else {
-			LOG_INF("Configuration applied.\n");
-		}
+	cnx_params.channel = WIFI_CHANNEL_ANY;
+	cnx_params.band = WIFI_FREQ_BAND_2_4_GHZ;
+	cnx_params.mfp = WIFI_MFP_OPTIONAL;
+	rc = net_mgmt(NET_REQUEST_WIFI_CONNECT, iface,
+		&cnx_params, sizeof(struct wifi_connect_req_params));
+	if (rc < 0) {
+		LOG_ERR("Cannot apply saved Wi-Fi configuration, err = %d.\n", rc);
+	} else {
+		LOG_INF("Configuration applied.\n");
 	}
+
 	net_mgmt_init_event_callback(&wifi_prov_cb,
 				     wifi_connect_handler,
 				     NET_EVENT_WIFI_CONNECT_RESULT);
