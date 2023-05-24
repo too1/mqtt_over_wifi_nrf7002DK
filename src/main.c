@@ -81,63 +81,63 @@ static void connect_mqtt(void)
 		return;
 	}
 
-do_connect:
-	if (connect_attempt++ > 0) {
-		LOG_INF("Reconnecting in %d seconds...",
-			CONFIG_MQTT_RECONNECT_DELAY_S);
-		k_sleep(K_SECONDS(CONFIG_MQTT_RECONNECT_DELAY_S));
-	}
-	err = mqtt_connect(&client);
-	if (err) {
-		LOG_ERR("Error in mqtt_connect: %d", err);
-		goto do_connect;
-	}
-
-	err = fds_init(&client,&fds);
-	if (err) {
-		LOG_ERR("Error in fds_init: %d", err);
-		return;
-	}
-
 	while (1) {
-		err = poll(&fds, 1, mqtt_keepalive_time_left(&client));
-		if (err < 0) {
-			LOG_ERR("Error in poll(): %d", errno);
-			break;
+		do {
+			if (connect_attempt++ > 0) {
+				LOG_INF("Reconnecting in %d seconds...", CONFIG_MQTT_RECONNECT_DELAY_S);
+				k_sleep(K_SECONDS(CONFIG_MQTT_RECONNECT_DELAY_S));
+			}
+			err = mqtt_connect(&client);
+			if (err) {
+				LOG_ERR("Error in mqtt_connect: %d", err);
+			}
+		} while (err != 0);
+
+		err = fds_init(&client,&fds);
+		if (err) {
+			LOG_ERR("Error in fds_init: %d", err);
+			return;
 		}
 
-		err = mqtt_live(&client);
-		if ((err != 0) && (err != -EAGAIN)) {
-			LOG_ERR("Error in mqtt_live: %d", err);
-			break;
-		}
+		while (1) {
+			err = poll(&fds, 1, mqtt_keepalive_time_left(&client));
+			if (err < 0) {
+				LOG_ERR("Error in poll(): %d", errno);
+				break;
+			}
 
-		if ((fds.revents & POLLIN) == POLLIN) {
-			err = mqtt_input(&client);
-			if (err != 0) {
-				LOG_ERR("Error in mqtt_input: %d", err);
+			err = mqtt_live(&client);
+			if ((err != 0) && (err != -EAGAIN)) {
+				LOG_ERR("Error in mqtt_live: %d", err);
+				break;
+			}
+
+			if ((fds.revents & POLLIN) == POLLIN) {
+				err = mqtt_input(&client);
+				if (err != 0) {
+					LOG_ERR("Error in mqtt_input: %d", err);
+					break;
+				}
+			}
+
+			if ((fds.revents & POLLERR) == POLLERR) {
+				LOG_ERR("POLLERR");
+				break;
+			}
+
+			if ((fds.revents & POLLNVAL) == POLLNVAL) {
+				LOG_ERR("POLLNVAL");
 				break;
 			}
 		}
 
-		if ((fds.revents & POLLERR) == POLLERR) {
-			LOG_ERR("POLLERR");
-			break;
-		}
+		LOG_INF("Disconnecting MQTT client");
 
-		if ((fds.revents & POLLNVAL) == POLLNVAL) {
-			LOG_ERR("POLLNVAL");
-			break;
+		err = mqtt_disconnect(&client);
+		if (err) {
+			LOG_ERR("Could not disconnect MQTT client: %d", err);
 		}
 	}
-
-	LOG_INF("Disconnecting MQTT client");
-
-	err = mqtt_disconnect(&client);
-	if (err) {
-		LOG_ERR("Could not disconnect MQTT client: %d", err);
-	}
-	goto do_connect;
 }
 
 static void wifi_connect_handler(struct net_mgmt_event_callback *cb,
