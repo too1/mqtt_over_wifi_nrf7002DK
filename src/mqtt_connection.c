@@ -123,19 +123,29 @@ int data_publish(struct mqtt_client *c, enum mqtt_qos qos,
 int data_temp_publish(struct mqtt_client *c, enum mqtt_qos qos, float temp)
 {
 	struct mqtt_publish_param param;
-	static uint8_t temp_string[32];
-	sprintf(temp_string, "%i C", (int)temp);
+	static uint8_t sub_string[64], tmp_string[16];
+	static float temp_history[10] = {0};
+	for(int i = 0; i < 9; i++) temp_history[i] = temp_history[i+1];
+	temp_history[9] = temp;
+	//sprintf(temp_string, "%.1f C", temp);
+	sprintf(sub_string, "[");
+	for(int i = 0; i < 10; i++) {
+		sprintf(tmp_string, "%.1f,", temp_history[i]);
+		strcat(sub_string, tmp_string);
+	}
+	sub_string[strlen(sub_string)-1] = 0;
+	strcat(sub_string, "]");
 
 	param.message.topic.qos = qos;
 	param.message.topic.topic.utf8 = CONFIG_MQTT_PUB_TOPIC_TEMP;
 	param.message.topic.topic.size = strlen(CONFIG_MQTT_PUB_TOPIC_TEMP);
-	param.message.payload.data = temp_string;
-	param.message.payload.len = strlen(temp_string);
+	param.message.payload.data = sub_string;
+	param.message.payload.len = strlen(sub_string);
 	param.message_id = sys_rand32_get();
 	param.dup_flag = 0;
 	param.retain_flag = 0;
 
-	data_print("Publishing: ", temp_string, strlen(temp_string));
+	data_print("Publishing: ", sub_string, strlen(sub_string));
 	LOG_INF("to topic: %s", CONFIG_MQTT_PUB_TOPIC_TEMP);
 
 	return mqtt_publish(c, &param);

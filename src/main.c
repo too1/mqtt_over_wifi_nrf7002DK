@@ -153,13 +153,27 @@ static void wifi_connect_handler(struct net_mgmt_event_callback *cb,
 	}
 }
 
+static float get_current_temperature()
+{
+	// Keep track of the previously returned temperature
+	static float previous_temp = 20.0f;
+
+	// Generate a random temperature in the range 16-24 C
+	float random_temp = 16.0f + (float)(rand() % 8000) * 0.001f;
+
+	// Set the temperature to a mix of the old and the new, in order to simulate a slowly changing temperature
+	previous_temp = previous_temp * 0.8f + random_temp * 0.2f;
+	
+	return previous_temp;
+}
+
 void temp_update_thread_func(void *p)
 {
 	int ret;
 	static float temperature = 16.0f;
 	while (1) {
 		LOG_INF("Trying to send a temperature update");
-		ret = data_temp_publish(&client, MQTT_QOS_1_AT_LEAST_ONCE, temperature);
+		ret = data_temp_publish(&client, MQTT_QOS_1_AT_LEAST_ONCE, get_current_temperature());
 		if (ret < 0) {
 			LOG_INF("MQTT publish failed (err %i)", ret);
 		}
