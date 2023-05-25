@@ -117,6 +117,30 @@ int data_publish(struct mqtt_client *c, enum mqtt_qos qos,
 
 	return mqtt_publish(c, &param);
 }
+
+/**@brief Function to publish data on the configured topic
+ */
+int data_temp_publish(struct mqtt_client *c, enum mqtt_qos qos, float temp)
+{
+	struct mqtt_publish_param param;
+	static uint8_t temp_string[32];
+	sprintf(temp_string, "%i C", (int)temp);
+
+	param.message.topic.qos = qos;
+	param.message.topic.topic.utf8 = CONFIG_MQTT_PUB_TOPIC_TEMP;
+	param.message.topic.topic.size = strlen(CONFIG_MQTT_PUB_TOPIC_TEMP);
+	param.message.payload.data = temp_string;
+	param.message.payload.len = strlen(temp_string);
+	param.message_id = sys_rand32_get();
+	param.dup_flag = 0;
+	param.retain_flag = 0;
+
+	data_print("Publishing: ", temp_string, strlen(temp_string));
+	LOG_INF("to topic: %s", CONFIG_MQTT_PUB_TOPIC_TEMP);
+
+	return mqtt_publish(c, &param);
+}
+
 /**@brief MQTT client event handler
  */
 void mqtt_evt_handler(struct mqtt_client *const c,

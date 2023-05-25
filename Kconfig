@@ -24,6 +24,10 @@ config MQTT_PUB_TOPIC
 	string "MQTT publish topic"
 	default "devacademy/publish/topic44"
 
+config MQTT_PUB_TOPIC_TEMP
+	string "MQTT temperature publish topic"
+	default "devacademy/publish/topic44temp"
+
 config MQTT_SUB_TOPIC
 	string "MQTT subscribe topic"
 	default "devacademy/subscribe/topic44"

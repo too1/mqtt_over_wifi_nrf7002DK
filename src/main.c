@@ -153,6 +153,21 @@ static void wifi_connect_handler(struct net_mgmt_event_callback *cb,
 	}
 }
 
+void temp_update_thread_func(void *p)
+{
+	int ret;
+	static float temperature = 16.0f;
+	while (1) {
+		LOG_INF("Trying to send a temperature update");
+		ret = data_temp_publish(&client, MQTT_QOS_1_AT_LEAST_ONCE, temperature);
+		if (ret < 0) {
+			LOG_INF("MQTT publish failed (err %i)", ret);
+		}
+		temperature += 0.1f;
+		k_msleep(10000);
+	}
+}
+
 void main(void)
 {
 	int rc;
@@ -203,3 +218,5 @@ void main(void)
 	/* Connect to MQTT Broker */
 	connect_mqtt();
 }
+
+K_THREAD_DEFINE(temp_update_thread, 2048, temp_update_thread_func, 0, 0, 0, 7, 0, 10000);
