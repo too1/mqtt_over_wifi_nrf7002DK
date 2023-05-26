@@ -94,16 +94,13 @@ static void data_print(uint8_t *prefix, uint8_t *data, size_t len)
 	LOG_INF("%s%s", (char *)prefix, (char *)buf);
 }
 
-/**@brief Function to publish data on the configured topic
- */
-int data_publish(struct mqtt_client *c, enum mqtt_qos qos,
-	uint8_t *data, size_t len)
+int data_publish_generic(struct mqtt_client *c, char *topic, uint8_t *data, size_t len)
 {
 	struct mqtt_publish_param param;
 
-	param.message.topic.qos = qos;
-	param.message.topic.topic.utf8 = CONFIG_MQTT_PUB_TOPIC;
-	param.message.topic.topic.size = strlen(CONFIG_MQTT_PUB_TOPIC);
+	param.message.topic.qos = MQTT_QOS_1_AT_LEAST_ONCE;
+	param.message.topic.topic.utf8 = topic;
+	param.message.topic.topic.size = strlen(topic);
 	param.message.payload.data = data;
 	param.message.payload.len = len;
 	param.message_id = sys_rand32_get();
@@ -111,18 +108,22 @@ int data_publish(struct mqtt_client *c, enum mqtt_qos qos,
 	param.retain_flag = 0;
 
 	data_print("Publishing: ", data, len);
-	LOG_INF("to topic: %s len: %u",
-		CONFIG_MQTT_PUB_TOPIC,
-		(unsigned int)strlen(CONFIG_MQTT_PUB_TOPIC));
+	LOG_INF("to topic: %s len: %u", topic, (unsigned int)strlen(topic));
 
 	return mqtt_publish(c, &param);
 }
 
 /**@brief Function to publish data on the configured topic
  */
-int data_temp_publish(struct mqtt_client *c, enum mqtt_qos qos, float temp)
+int data_publish(struct mqtt_client *c, uint8_t *data, size_t len)
 {
-	struct mqtt_publish_param param;
+	return data_publish_generic(c, CONFIG_MQTT_PUB_TOPIC, data, len);
+}
+
+/**@brief Function to publish data on the configured topic
+ */
+int data_temp_publish(struct mqtt_client *c, float temp)
+{
 	static uint8_t sub_string[64], tmp_string[16];
 	static float temp_history[10] = {0};
 	for(int i = 0; i < 9; i++) temp_history[i] = temp_history[i+1];
@@ -136,19 +137,7 @@ int data_temp_publish(struct mqtt_client *c, enum mqtt_qos qos, float temp)
 	sub_string[strlen(sub_string)-1] = 0;
 	strcat(sub_string, "]");
 
-	param.message.topic.qos = qos;
-	param.message.topic.topic.utf8 = CONFIG_MQTT_PUB_TOPIC_TEMP;
-	param.message.topic.topic.size = strlen(CONFIG_MQTT_PUB_TOPIC_TEMP);
-	param.message.payload.data = sub_string;
-	param.message.payload.len = strlen(sub_string);
-	param.message_id = sys_rand32_get();
-	param.dup_flag = 0;
-	param.retain_flag = 0;
-
-	data_print("Publishing: ", sub_string, strlen(sub_string));
-	LOG_INF("to topic: %s", CONFIG_MQTT_PUB_TOPIC_TEMP);
-
-	return mqtt_publish(c, &param);
+	return data_publish_generic(c, CONFIG_MQTT_PUB_TOPIC_TEMP, sub_string, strlen(sub_string));
 }
 
 /**@brief MQTT client event handler

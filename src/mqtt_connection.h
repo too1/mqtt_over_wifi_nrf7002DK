@@ -17,9 +17,8 @@ int fds_init(struct mqtt_client *c, struct pollfd *fds);
 
 /**@brief Function to publish data on the configured topic
  */
-int data_publish(struct mqtt_client *c, enum mqtt_qos qos,
-	uint8_t *data, size_t len);
+int data_publish(struct mqtt_client *c, uint8_t *data, size_t len);
 
-int data_temp_publish(struct mqtt_client *c, enum mqtt_qos qos, float temp);
+int data_temp_publish(struct mqtt_client *c, float temp);
 
 #endif /* _CONNECTION_H_ */

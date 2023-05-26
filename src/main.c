@@ -43,8 +43,8 @@ static void button_handler(uint32_t button_state, uint32_t has_changed)
 	switch (has_changed) {
 	case DK_BTN1_MSK:
 		if (button_state & DK_BTN1_MSK){	
-			int err = data_publish(&client, MQTT_QOS_1_AT_LEAST_ONCE,
-				   CONFIG_BUTTON1_EVENT_PUBLISH_MSG, sizeof(CONFIG_BUTTON1_EVENT_PUBLISH_MSG)-1);
+			int err = data_publish(&client, CONFIG_BUTTON1_EVENT_PUBLISH_MSG, 
+									sizeof(CONFIG_BUTTON1_EVENT_PUBLISH_MSG)-1);
 			if (err) {
 				LOG_ERR("Failed to send message, %d", err);
 				return;	
@@ -193,7 +193,7 @@ void temp_update_thread_func(void *p)
 	static float temperature = 16.0f;
 	while (1) {
 		LOG_INF("Trying to send a temperature update");
-		ret = data_temp_publish(&client, MQTT_QOS_1_AT_LEAST_ONCE, get_current_temperature());
+		ret = data_temp_publish(&client, get_current_temperature());
 		if (ret < 0) {
 			LOG_INF("MQTT publish failed (err %i)", ret);
 		}
