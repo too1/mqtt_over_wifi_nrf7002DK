@@ -12,6 +12,9 @@
 
 #include <zephyr/net/wifi.h>
 #include <zephyr/net/wifi_mgmt.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_vs.h>
 
 #include <zephyr/net/socket.h>
 #include <zephyr/net/mqtt.h>
@@ -173,6 +176,35 @@ static void wifi_connect_handler(struct net_mgmt_event_callback *cb,
 	}
 }
 
+int temperature_measure(void)
+{
+
+	int err = 0;
+	struct net_buf *buf, *rsp = NULL;
+	struct bt_hci_rp_vs_read_chip_temp *cmd_params;
+	struct bt_hci_rp_vs_read_chip_temp *rsp_params;
+
+	buf = bt_hci_cmd_create(BT_HCI_OP_VS_READ_CHIP_TEMP, sizeof(*cmd_params));
+	if (!buf) {
+		printk("Could not allocate command buffer");
+		return -ENOMEM;
+	}
+
+	cmd_params = net_buf_add(buf, sizeof(*cmd_params));
+
+	err = bt_hci_cmd_send_sync(BT_HCI_OP_VS_READ_CHIP_TEMP, buf, &rsp);
+	if (err) {
+		printk("bt_hci_cmd_send_sync failed (err: %d)",err);
+		return err;
+	}
+
+	rsp_params = (void *) rsp->data;
+	printk("Temp readout: 0x%i\n",rsp_params->temps);
+	net_buf_unref(rsp); 
+
+	return 0;
+}
+
 static float get_current_temperature()
 {
 	// Keep track of the previously returned temperature
@@ -197,6 +229,7 @@ void temp_update_thread_func(void *p)
 		if (ret < 0) {
 			LOG_INF("MQTT publish failed (err %i)", ret);
 		}
+		temperature_measure();
 		temperature += 0.1f;
 		k_msleep(10000);
 	}
@@ -244,6 +277,11 @@ void main(void)
 	/* Sleep 1 seconds to allow initialization of wifi driver. */
 	k_sleep(K_SECONDS(1));
 
+	rc = bt_enable(0);
+	if (rc < 0) {
+		LOG_ERR("Bluetooth enable failed (err %i)", rc);
+	}
+
 	LOG_INF("Using static Wi-Fi configuration\n");
 	char *wifi_static_ssid = NETWORK_SSID;
 	char *wifi_static_pwd = NETWORK_PWD;
@@ -286,4 +324,4 @@ void main(void)
 	connect_mqtt();
 }
 
-K_THREAD_DEFINE(temp_update_thread, 2048, temp_update_thread_func, 0, 0, 0, 7, 0, 10000);
+K_THREAD_DEFINE(temp_update_thread, 4096, temp_update_thread_func, 0, 0, 0, 7, 0, 10000);
