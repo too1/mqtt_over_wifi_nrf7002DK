@@ -12,9 +12,6 @@
 
 #include <zephyr/net/wifi.h>
 #include <zephyr/net/wifi_mgmt.h>
-#include <zephyr/bluetooth/bluetooth.h>
-#include <zephyr/bluetooth/hci.h>
-#include <zephyr/bluetooth/hci_vs.h>
 
 #include <zephyr/net/socket.h>
 #include <zephyr/net/mqtt.h>
@@ -30,8 +27,6 @@ K_SEM_DEFINE(wifi_connected_sem, 0, 1);
 
 #define NETWORK_SSID "EmeaWorkshop"
 #define NETWORK_PWD  "BillionBluetooth"
-
-int wifi_set_twt();
 
 /* The mqtt client struct */
 static struct mqtt_client client;
@@ -56,8 +51,12 @@ static void button_handler(uint32_t button_state, uint32_t has_changed)
 		break;
 	case DK_BTN2_MSK:
 		if (button_state & DK_BTN2_MSK){	
-			LOG_INF("Trying to enable TWT.......");
-			wifi_set_twt();
+			int err = data_publish(&client, CONFIG_BUTTON2_EVENT_PUBLISH_MSG, 
+									sizeof(CONFIG_BUTTON2_EVENT_PUBLISH_MSG)-1);
+			if (err) {
+				LOG_ERR("Failed to send message, %d", err);
+				return;	
+			}
 		}
 		break;
 	}
@@ -141,25 +140,6 @@ static void connect_mqtt(void)
 	}
 }
 
-bool nrf_wifi_ps_enabled = 0;
-uint8_t flow_id = 1;
-static void handle_wifi_twt_event(struct net_mgmt_event_callback *cb)
-{
-	const struct wifi_twt_params *resp = (const struct wifi_twt_params *)cb->info;
-
-	LOG_INF("TWT response: CMD %s for dialog: %d and flow: %d\n",
-	      wifi_twt_setup_cmd2str[resp->setup_cmd], resp->dialog_token, resp->flow_id);
-
-	/* If accepted, then no need to print TWT params */
-	if (resp->setup_cmd != WIFI_TWT_SETUP_CMD_ACCEPT) {
-		LOG_INF("TWT parameters: trigger: %s wake_interval_ms: %d, interval_ms: %d\n",
-		      resp->setup.trigger ? "trigger" : "no_trigger",
-		      resp->setup.twt_wake_interval_ms,
-		      resp->setup.twt_interval_ms);
-	}
-	nrf_wifi_ps_enabled = 1;
-}
-
 static void wifi_connect_handler(struct net_mgmt_event_callback *cb,
 				    uint32_t mgmt_event, struct net_if *iface)
 {
@@ -168,104 +148,9 @@ static void wifi_connect_handler(struct net_mgmt_event_callback *cb,
 		LOG_INF("Connected to a Wi-Fi Network");
 		k_sem_give(&wifi_connected_sem);
 		break;
-	case NET_EVENT_WIFI_TWT:
-		handle_wifi_twt_event(cb);
-		break;
 	default:
 		break;
 	}
-}
-
-int temperature_measure(void)
-{
-
-	int err = 0;
-	struct net_buf *buf, *rsp = NULL;
-	struct bt_hci_rp_vs_read_chip_temp *cmd_params;
-	struct bt_hci_rp_vs_read_chip_temp *rsp_params;
-
-	buf = bt_hci_cmd_create(BT_HCI_OP_VS_READ_CHIP_TEMP, sizeof(*cmd_params));
-	if (!buf) {
-		printk("Could not allocate command buffer");
-		return -ENOMEM;
-	}
-
-	cmd_params = net_buf_add(buf, sizeof(*cmd_params));
-
-	err = bt_hci_cmd_send_sync(BT_HCI_OP_VS_READ_CHIP_TEMP, buf, &rsp);
-	if (err) {
-		printk("bt_hci_cmd_send_sync failed (err: %d)",err);
-		return err;
-	}
-
-	rsp_params = (void *) rsp->data;
-	printk("Temp readout: 0x%i\n",rsp_params->temps);
-	net_buf_unref(rsp); 
-
-	return 0;
-}
-
-static float get_current_temperature()
-{
-	// Keep track of the previously returned temperature
-	static float previous_temp = 20.0f;
-
-	// Generate a random temperature in the range 16-24 C
-	float random_temp = 16.0f + (float)(rand() % 8000) * 0.001f;
-
-	// Set the temperature to a mix of the old and the new, in order to simulate a slowly changing temperature
-	previous_temp = previous_temp * 0.8f + random_temp * 0.2f;
-	
-	return previous_temp;
-}
-
-void temp_update_thread_func(void *p)
-{
-	int ret;
-	static float temperature = 16.0f;
-	while (1) {
-		LOG_INF("Trying to send a temperature update");
-		ret = data_temp_publish(&client, get_current_temperature());
-		if (ret < 0) {
-			LOG_INF("MQTT publish failed (err %i)", ret);
-		}
-		temperature_measure();
-		temperature += 0.1f;
-		k_msleep(10000);
-	}
-}
-
-int wifi_set_twt()
-{
-	printk("TWT %s\n", nrf_wifi_ps_enabled ? "teardown" : "setup");
-	struct net_if *iface = net_if_get_default();
-	struct wifi_twt_params params = { 0 };
-
-	params.negotiation_type = WIFI_TWT_INDIVIDUAL;
-	params.setup_cmd = WIFI_TWT_SETUP_CMD_REQUEST;
-	params.flow_id = flow_id;
-
-	if (nrf_wifi_ps_enabled){
-		params.operation = WIFI_TWT_TEARDOWN;
-		params.teardown.teardown_all = 1;
-		flow_id = flow_id<WIFI_MAX_TWT_FLOWS ? flow_id+1 : 1;
-		nrf_wifi_ps_enabled = 0;
-	}
-	else {
-		params.operation = WIFI_TWT_SETUP;
-		params.setup.twt_interval_ms = 15000;
-		params.setup.responder = 0;
-		params.setup.trigger = 1;
-		params.setup.implicit = 1;
-		params.setup.announce = 1;
-		params.setup.twt_wake_interval_ms = 65;
-	}
-	
-	if (net_mgmt(NET_REQUEST_WIFI_TWT, iface, &params, sizeof(params))) {
-		LOG_ERR("Operation %s with negotiation type %s failed", wifi_twt_operation2str[params.operation], wifi_twt_negotiation_type2str[params.negotiation_type]);
-	}
-	LOG_INF("TWT operation %s with flow_id: %d requested", wifi_twt_operation2str[params.operation], params.flow_id);
-	return 0;
 }
 
 void main(void)
@@ -276,11 +161,6 @@ void main(void)
 
 	/* Sleep 1 seconds to allow initialization of wifi driver. */
 	k_sleep(K_SECONDS(1));
-
-	rc = bt_enable(0);
-	if (rc < 0) {
-		LOG_ERR("Bluetooth enable failed (err %i)", rc);
-	}
 
 	LOG_INF("Using static Wi-Fi configuration\n");
 	char *wifi_static_ssid = NETWORK_SSID;
@@ -309,7 +189,7 @@ void main(void)
 		LOG_INF("Configuration applied.\n");
 	}
 
-	net_mgmt_init_event_callback(&wifi_prov_cb, wifi_connect_handler, NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_TWT);
+	net_mgmt_init_event_callback(&wifi_prov_cb, wifi_connect_handler, NET_EVENT_WIFI_CONNECT_RESULT);
 
 	net_mgmt_add_event_callback(&wifi_prov_cb);
 
@@ -324,4 +204,3 @@ void main(void)
 	connect_mqtt();
 }
 
-K_THREAD_DEFINE(temp_update_thread, 4096, temp_update_thread_func, 0, 0, 0, 7, 0, 10000);

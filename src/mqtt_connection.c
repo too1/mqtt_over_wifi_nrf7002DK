@@ -60,7 +60,6 @@ static int get_received_payload(struct mqtt_client *c, size_t length)
 
 /**@brief Function to subscribe to the configured topic
  */
-
 static int subscribe(struct mqtt_client *const c)
 {
 	struct mqtt_topic subscribe_topic = {
@@ -94,6 +93,8 @@ static void data_print(uint8_t *prefix, uint8_t *data, size_t len)
 	LOG_INF("%s%s", (char *)prefix, (char *)buf);
 }
 
+/**@brief Generic function to publish data on any topic
+ */
 int data_publish_generic(struct mqtt_client *c, char *topic, uint8_t *data, size_t len)
 {
 	struct mqtt_publish_param param;
@@ -113,31 +114,11 @@ int data_publish_generic(struct mqtt_client *c, char *topic, uint8_t *data, size
 	return mqtt_publish(c, &param);
 }
 
-/**@brief Function to publish data on the configured topic
+/**@brief Function to publish data on the default topic
  */
 int data_publish(struct mqtt_client *c, uint8_t *data, size_t len)
 {
 	return data_publish_generic(c, CONFIG_MQTT_PUB_TOPIC, data, len);
-}
-
-/**@brief Function to publish data on the configured topic
- */
-int data_temp_publish(struct mqtt_client *c, float temp)
-{
-	static uint8_t sub_string[64], tmp_string[16];
-	static float temp_history[10] = {0};
-	for(int i = 0; i < 9; i++) temp_history[i] = temp_history[i+1];
-	temp_history[9] = temp;
-	//sprintf(temp_string, "%.1f C", temp);
-	sprintf(sub_string, "[");
-	for(int i = 0; i < 10; i++) {
-		sprintf(tmp_string, "%.1f,", temp_history[i]);
-		strcat(sub_string, tmp_string);
-	}
-	sub_string[strlen(sub_string)-1] = 0;
-	strcat(sub_string, "]");
-
-	return data_publish_generic(c, CONFIG_MQTT_PUB_TOPIC_TEMP, sub_string, strlen(sub_string));
 }
 
 /**@brief MQTT client event handler
@@ -320,7 +301,6 @@ exit:
 
 	return client_id;
 }
-
 
 /**@brief Initialize the MQTT client structure
  */
