@@ -121,6 +121,28 @@ static float read_temperature(void)
 Finally the mqtt_data_rx_handler(const uint8_t *data, uint32_t len, const uint8_t *topic_string) function in main.c (around line 80) needs to be updated to respond to a temperature request, and send a temperature value in return. 
 
 First check the topic_string argument to make sure the received message was sent on the CONFIG_MQTT_SUB_TEMP_REQUEST_TOPIC. If this is the case, use the recently defined read_temperature() and app_mqtt_publish_temp(..) functions to get a new temperature reading and publish it to the temperature topic. 
+```C
+static void mqtt_data_rx_handler(const uint8_t *data, uint32_t len, const uint8_t *topic_string)
+{
+	// Verify the topic of the incoming message
+	if (strcmp(topic_string, CONFIG_MQTT_SUB_TOPIC) == 0) {
+		// Control LED1 and LED2 
+		if (strncmp(data, CONFIG_TURN_LED1_ON_CMD, sizeof(CONFIG_TURN_LED1_ON_CMD) - 1) == 0) {
+			dk_set_led_on(DK_LED1);
+		}
+		else if (strncmp(data, CONFIG_TURN_LED1_OFF_CMD, sizeof(CONFIG_TURN_LED1_OFF_CMD) - 1) == 0) {
+			dk_set_led_off(DK_LED1);
+		}
+		else if (strncmp(data, CONFIG_TURN_LED2_ON_CMD, sizeof(CONFIG_TURN_LED2_ON_CMD) - 1) == 0) {
+			//dk_set_led_on(DK_LED2);
+		}
+		else if (strncmp(data, CONFIG_TURN_LED2_OFF_CMD, sizeof(CONFIG_TURN_LED2_OFF_CMD) - 1) == 0) {
+			//dk_set_led_off(DK_LED2);
+		}
+	}
+	// ADD YOUR CODE HERE
+}
+```
 
 In order to test the new functionality a button and a text field needs to be added to the MQTT Dashboard app. 
 The button should be configured to use the same string as CONFIG_MQTT_SUB_TEMP_REQUEST_TOPIC, while the text field should use CONFIG_MQTT_PUB_TEMP_TOPIC. Again make sure to use the personalized topic strings rather than the default ones used in the repository. 
