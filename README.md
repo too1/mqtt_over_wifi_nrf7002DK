@@ -40,6 +40,112 @@ Go through all the stages of the blog, and make sure to select Option A in Stage
 To save time the steps needed to set up the *LED2 On* and *LED2 Off* buttons can be omitted, as these buttons will not be needed in later steps. 
 
 ### Step 2 - Add MQTT topics to request and send a temperature update
+---------------------------------------------------------------------
+In this step the goal is to add another publish topic for sending temperature updates from the DK, and subscribe to a topic that allows the mobile app to request a temperature update from the DK. 
+
+This example uses application level Kconfig parameters to configure the application, defined in the Kconfig file in the root folder of the example. The original publish and subscribe topics are defined here, and in order to extend the example with more topics they should be added to this file as well. 
+
+The definition here allows you to set a default value, which will be used for any parameter that is not defined in prj.conf. 
+
+To add a publish topic for temperature and a subscribe topic for temperature request, add the following to Kconfig, somewhere after the original MQTT_PUB_TOPIC and MQTT_SUB_TOPIC definitions:
+
+```C
+config MQTT_PUB_TEMP_TOPIC
+	string "MQTT temperature publish topic"
+	default "devacademy/publish/topic44temp"
+
+config MQTT_SUB_TEMP_REQUEST_TOPIC
+	string "MQTT temperature request subscribe topic"
+	default "devacademy/subscribe/topic44tempreq"
+```
+
+Then you should configure the new parameters in prj.conf, giving the topic an appropriate value. Make sure to replace 'emeaworkshop' below with something unique, to avoid conflict with other DK's. 
+Note: If you set a unique default value in the Kconfig file this step is not strictly necessary.
+
+```C
+# Temperature related topics
+CONFIG_MQTT_PUB_TEMP_TOPIC="devacademy/publish/emeaworkshop/temp"
+CONFIG_MQTT_SUB_TEMP_REQUEST_TOPIC="devacademy/subscribe/emeaworkshop/tempreq"
+```
+
+In order to subscribe to the new topic it is necessary to modify the static int subscribe(struct mqtt_client *const c) function in app_mqtt.c. 
+
+The subscribe_topics[] array currently has a single item only, and a second item should be added by adding the following code snippet to the array definition (line 82):
+```C
+		{
+			.topic = {
+				.utf8 = CONFIG_MQTT_SUB_TEMP_REQUEST_TOPIC,
+				.size = strlen(CONFIG_MQTT_SUB_TEMP_REQUEST_TOPIC)
+			},
+			.qos = MQTT_QOS_1_AT_LEAST_ONCE
+		},
+```
+
+In order to publish a temperature value a new function will be added to app_mqtt.c/h. Start by adding the following function prototype to app_mqtt.h (line 28):
+```C
+int app_mqtt_publish_temp(float temp);
+```
+
+The function itself should be defined in app_mgtt.c, around line 143. 
+The full code will not be provided, but a good tip is to look at the implementation of the *app_mqtt_publish(..)* function showing how you can use the *data_publish_generic(struct mqtt_client *c, char *topic, uint8_t *data, size_t len)* function to publish generic data to any topic. 
+Add code to convert the float temperature value to a string for transmission over MQTT. 
+Make sure to use the new publish topic defined earlier, and not the default topic.  
+```C
+/**@brief Function to publish data on the temperature topic
+ */
+int app_mqtt_publish_temp(float temp)
+{
+	// Add your code  here
+}
+```
+
+In order to have any data to send a *float read_temperature()* function needs to be implemented in main.c (around line 57). For the time being this function will just generate a dummy temperature value, since there is no temperature sensor easily available on the nRF7002-DK. 
+
+The implementation of this function is up to you, but for convenience an example is provided below:
+```C
+static float read_temperature(void)
+{
+	// Keep track of the previously returned temperature
+	static float previous_temp = 20.0f;
+
+	// Generate a random temperature in the range 0-40 C
+	float random_temp = (float)(rand() % 40001) * 0.001f;
+
+	// Set the temperature to a mix of the old and the new, in order to simulate a slowly changing temperature
+	previous_temp = previous_temp * 0.9f + random_temp * 0.1f;
+	
+	return previous_temp;
+}
+```
+
+Finally the mqtt_data_rx_handler(const uint8_t *data, uint32_t len, const uint8_t *topic_string) function in main.c (around line 80) needs to be updated to respond to a temperature request, and send a temperature value in return. 
+
+First check the topic_string argument to make sure the received message was sent on the CONFIG_MQTT_SUB_TEMP_REQUEST_TOPIC. If this is the case, use the recently defined read_temperature() and app_mqtt_publish_temp(..) functions to get a new temperature reading and publish it to the temperature topic. 
+```C
+static void mqtt_data_rx_handler(const uint8_t *data, uint32_t len, const uint8_t *topic_string)
+{
+	// Verify the topic of the incoming message
+	if (strcmp(topic_string, CONFIG_MQTT_SUB_TOPIC) == 0) {
+		// Control LED1 and LED2 
+		if (strncmp(data, CONFIG_TURN_LED1_ON_CMD, sizeof(CONFIG_TURN_LED1_ON_CMD) - 1) == 0) {
+			dk_set_led_on(DK_LED1);
+		}
+		else if (strncmp(data, CONFIG_TURN_LED1_OFF_CMD, sizeof(CONFIG_TURN_LED1_OFF_CMD) - 1) == 0) {
+			dk_set_led_off(DK_LED1);
+		}
+		else if (strncmp(data, CONFIG_TURN_LED2_ON_CMD, sizeof(CONFIG_TURN_LED2_ON_CMD) - 1) == 0) {
+			//dk_set_led_on(DK_LED2);
+		}
+		else if (strncmp(data, CONFIG_TURN_LED2_OFF_CMD, sizeof(CONFIG_TURN_LED2_OFF_CMD) - 1) == 0) {
+			//dk_set_led_off(DK_LED2);
+		}
+	}
+	// ADD YOUR CODE HERE
+}
+```
+
+In order to test the new functionality a button and a text field needs to be added to the MQTT Dashboard app. 
+The button should be configured to use the same string as CONFIG_MQTT_SUB_TEMP_REQUEST_TOPIC, while the text field should use CONFIG_MQTT_PUB_TEMP_TOPIC. Again make sure to use the personalized topic strings rather than the default ones used in the repository. 
 
 ### Step 3 - Add a thread to send temperature updates periodically
 
