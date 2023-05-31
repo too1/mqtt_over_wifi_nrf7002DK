@@ -10,7 +10,7 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(wifi_ble_provisioning)
 
 target_sources(app PRIVATE src/main.c
-                           src/mqtt_connection.c
+                           src/app_mqtt.c
 )
 
 zephyr_library_include_directories(inc)
