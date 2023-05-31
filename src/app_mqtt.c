@@ -29,6 +29,7 @@ static struct mqtt_client client;
 /* File descriptor */
 static struct pollfd fds;
 
+/* Function pointers allowing the app_mqtt module to forward various events to the application */
 static struct app_mqtt_callbacks_t registered_callbacks = {0};
 
 /**@brief Function to get the payload of recived data.
