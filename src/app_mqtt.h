@@ -25,6 +25,8 @@ void app_mqtt_set_callbacks(const struct app_mqtt_callbacks_t *callbacks);
 
 int app_mqtt_publish(uint8_t *data, size_t len);
 
+int app_mqtt_publish_temp(float temp);
+
 void app_mqtt_run(void);
 
 #endif 

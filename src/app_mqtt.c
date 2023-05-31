@@ -79,6 +79,13 @@ static int subscribe(struct mqtt_client *const c)
 			},
 			.qos = MQTT_QOS_1_AT_LEAST_ONCE
 		},
+		{
+			.topic = {
+				.utf8 = CONFIG_MQTT_SUB_TEMP_REQUEST_TOPIC,
+				.size = strlen(CONFIG_MQTT_SUB_TEMP_REQUEST_TOPIC)
+			},
+			.qos = MQTT_QOS_1_AT_LEAST_ONCE
+		},
 	};
 
 	const struct mqtt_subscription_list subscription_list = {
@@ -131,6 +138,15 @@ int data_publish_generic(struct mqtt_client *c, char *topic, uint8_t *data, size
 int app_mqtt_publish(uint8_t *data, size_t len)
 {
 	return data_publish_generic(&client, CONFIG_MQTT_PUB_TOPIC, data, len);
+}
+
+/**@brief Function to publish data on the temperature topic
+ */
+int app_mqtt_publish_temp(float temp)
+{
+	static uint8_t temp_string[16];
+	sprintf(temp_string, "%.1f C", temp);
+	return data_publish_generic(&client, CONFIG_MQTT_PUB_TEMP_TOPIC, temp_string, strlen(temp_string));
 }
 
 /**@brief MQTT client event handler

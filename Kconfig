@@ -28,6 +28,14 @@ config MQTT_SUB_TOPIC
 	string "MQTT subscribe topic"
 	default "devacademy/subscribe/topic44"
 
+config MQTT_PUB_TEMP_TOPIC
+	string "MQTT temperature publish topic"
+	default "devacademy/publish/topic44temp"
+
+config MQTT_SUB_TEMP_REQUEST_TOPIC
+	string "MQTT temperature request subscribe topic"
+	default "devacademy/subscribe/topic44tempreq"
+
 config MQTT_CLIENT_ID
 	string "MQTT Client ID"
 	help

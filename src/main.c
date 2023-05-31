@@ -54,6 +54,20 @@ static void button_handler(uint32_t button_state, uint32_t has_changed)
 	}
 }
 
+static float read_temperature(void)
+{
+	// Keep track of the previously returned temperature
+	static float previous_temp = 20.0f;
+
+	// Generate a random temperature in the range 0-40 C
+	float random_temp = (float)(rand() % 40001) * 0.001f;
+
+	// Set the temperature to a mix of the old and the new, in order to simulate a slowly changing temperature
+	previous_temp = previous_temp * 0.9f + random_temp * 0.1f;
+	
+	return previous_temp;
+}
+
 static void mqtt_connected_handler(void)
 {
 	dk_set_led_on(DK_LED2);
@@ -81,6 +95,11 @@ static void mqtt_data_rx_handler(const uint8_t *data, uint32_t len, const uint8_
 		else if (strncmp(data, CONFIG_TURN_LED2_OFF_CMD, sizeof(CONFIG_TURN_LED2_OFF_CMD) - 1) == 0) {
 			//dk_set_led_off(DK_LED2);
 		}
+	}
+	// Check if something is received on the temperature request topic
+	else if (strcmp(topic_string, CONFIG_MQTT_SUB_TEMP_REQUEST_TOPIC) == 0) {
+		// If anything is received on the temp request topic, send a temperature reading in return
+		app_mqtt_publish_temp(read_temperature());
 	}
 }
 
