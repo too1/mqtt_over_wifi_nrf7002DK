@@ -30,6 +30,53 @@ static struct net_mgmt_event_callback wifi_prov_cb;
 
 static bool mqtt_connected = false;
 
+
+static void wifi_set_twt(bool enable)
+{
+	struct net_if *iface = net_if_get_default();
+	struct wifi_twt_params params = { 0 };
+	uint8_t flow_id = 1;
+
+	params.negotiation_type = WIFI_TWT_INDIVIDUAL;
+	params.setup_cmd = WIFI_TWT_SETUP_CMD_REQUEST;
+	params.flow_id = flow_id;
+
+	if (enable){
+		params.operation = WIFI_TWT_SETUP;
+		params.setup.twt_interval_ms = 15000;
+		params.setup.responder = 0;
+		params.setup.trigger = 1;
+		params.setup.implicit = 1;
+		params.setup.announce = 1;
+		params.setup.twt_wake_interval_ms = 65;
+	} else {
+		params.operation = WIFI_TWT_TEARDOWN;
+		params.teardown.teardown_all = 1;
+		flow_id = (flow_id < WIFI_MAX_TWT_FLOWS) ? flow_id + 1 : 1;
+	}
+	
+	if (net_mgmt(NET_REQUEST_WIFI_TWT, iface, &params, sizeof(params))) {
+		LOG_ERR("Operation %s with negotiation type %s failed", wifi_twt_operation2str[params.operation], wifi_twt_negotiation_type2str[params.negotiation_type]);
+	}
+	LOG_INF("TWT operation %s with flow_id: %d requested", wifi_twt_operation2str[params.operation], params.flow_id);
+}
+
+static void handle_wifi_twt_event(struct net_mgmt_event_callback *cb)
+{
+	const struct wifi_twt_params *resp = (const struct wifi_twt_params *)cb->info;
+
+	LOG_INF("TWT response: CMD %s for dialog: %d and flow: %d\n",
+	      wifi_twt_setup_cmd2str[resp->setup_cmd], resp->dialog_token, resp->flow_id);
+
+	/* If accepted, then no need to print TWT params */
+	if (resp->setup_cmd != WIFI_TWT_SETUP_CMD_ACCEPT) {
+		LOG_INF("TWT parameters: trigger: %s wake_interval_ms: %d, interval_ms: %d\n",
+		      resp->setup.trigger ? "trigger" : "no_trigger",
+		      resp->setup.twt_wake_interval_ms,
+		      resp->setup.twt_interval_ms);
+	}
+}
+
 static void button_handler(uint32_t button_state, uint32_t has_changed)
 {
 	switch (has_changed) {
@@ -45,12 +92,7 @@ static void button_handler(uint32_t button_state, uint32_t has_changed)
 		break;
 	case DK_BTN2_MSK:
 		if (button_state & DK_BTN2_MSK){	
-			int err = app_mqtt_publish(CONFIG_BUTTON2_EVENT_PUBLISH_MSG, 
-									sizeof(CONFIG_BUTTON2_EVENT_PUBLISH_MSG)-1);
-			if (err) {
-				LOG_ERR("Failed to send message, %d", err);
-				return;	
-			}
+			wifi_set_twt(true);
 		}
 		break;
 	}
@@ -120,6 +162,9 @@ static void wifi_connect_handler(struct net_mgmt_event_callback *cb,
 		case NET_EVENT_WIFI_CONNECT_RESULT:
 			LOG_INF("Connected to a Wi-Fi Network");
 			k_sem_give(&wifi_connected_sem);
+			break;
+		case NET_EVENT_WIFI_TWT:
+			handle_wifi_twt_event(cb);
 			break;
 		default:
 			break;
@@ -200,7 +245,7 @@ void main(void)
 		LOG_INF("Configuration applied.\n");
 	}
 
-	net_mgmt_init_event_callback(&wifi_prov_cb, wifi_connect_handler, NET_EVENT_WIFI_CONNECT_RESULT);
+	net_mgmt_init_event_callback(&wifi_prov_cb, wifi_connect_handler, NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_TWT);
 
 	net_mgmt_add_event_callback(&wifi_prov_cb);
 
