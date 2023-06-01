@@ -32,6 +32,14 @@ config MQTT_PUB_TEMP_TOPIC
 	string "MQTT temperature publish topic"
 	default "devacademy/publish/topic44temp"
 
+config MQTT_PUB_TEMP_ARRAY_TOPIC
+	string "MQTT temperature graph publish topic"
+	default "devacademy/publish/topic44temparray"
+
+config TEMP_ARRAY_MAX_LENGTH
+	int "Max number of items in the temperature array"
+	default 16
+
 config MQTT_SUB_TEMP_REQUEST_TOPIC
 	string "MQTT temperature request subscribe topic"
 	default "devacademy/subscribe/topic44tempreq"

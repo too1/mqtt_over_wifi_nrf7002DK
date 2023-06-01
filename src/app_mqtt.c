@@ -149,6 +149,27 @@ int app_mqtt_publish_temp(float temp)
 	return data_publish_generic(&client, CONFIG_MQTT_PUB_TEMP_TOPIC, temp_string, strlen(temp_string));
 }
 
+/**@brief Function to publish data on the temperature graph topic
+ */
+int app_mqtt_publish_temp_array(float *temp_list, int len)
+{
+	// Ensure that the provided length doesn't exceed the maximum allowed
+	len = MIN(len, CONFIG_TEMP_ARRAY_MAX_LENGTH);
+	// Create a temporary array for the string. 
+	uint8_t temp_array_string[len * 5 + 3];
+	// Use sprintf to assemble the string, starting with the header bracket
+	sprintf(temp_array_string, "[");
+	for(int i = 0; i < len; i++) {
+		sprintf(temp_array_string, "%s%.1f,", temp_array_string, temp_list[i]);
+	}
+	// Remove the last comma by setting the last value of the string to 0
+	temp_array_string[strlen(temp_array_string) - 1] = 0;
+	// Add the end bracket
+	sprintf(temp_array_string, "%s]", temp_array_string);
+	// Send the array string over MQTT
+	return data_publish_generic(&client, CONFIG_MQTT_PUB_TEMP_ARRAY_TOPIC, temp_array_string, strlen(temp_array_string));
+}
+
 /**@brief MQTT client event handler
  */
 void mqtt_evt_handler(struct mqtt_client *const c,

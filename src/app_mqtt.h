@@ -27,6 +27,8 @@ int app_mqtt_publish(uint8_t *data, size_t len);
 
 int app_mqtt_publish_temp(float temp);
 
+int app_mqtt_publish_temp_array(float *temp_list, int len);
+
 void app_mqtt_run(void);
 
 #endif 

@@ -28,6 +28,8 @@ K_SEM_DEFINE(wifi_connected_sem, 0, 1);
 
 static struct net_mgmt_event_callback wifi_prov_cb;
 
+static bool mqtt_connected = false;
+
 static void button_handler(uint32_t button_state, uint32_t has_changed)
 {
 	switch (has_changed) {
@@ -71,11 +73,13 @@ static float read_temperature(void)
 static void mqtt_connected_handler(void)
 {
 	dk_set_led_on(DK_LED2);
+	mqtt_connected = true;
 }
 
 static void mqtt_disconnected_handler(int result)
 {
 	dk_set_led_off(DK_LED2);
+	mqtt_connected = false;
 }
 
 static void mqtt_data_rx_handler(const uint8_t *data, uint32_t len, const uint8_t *topic_string)
@@ -119,6 +123,36 @@ static void wifi_connect_handler(struct net_mgmt_event_callback *cb,
 			break;
 		default:
 			break;
+	}
+}
+
+static void temp_update_thread_func(void *p)
+{
+	float current_temperature;
+	static float temperature_list[CONFIG_TEMP_ARRAY_MAX_LENGTH];
+	int temperature_list_count = 0;
+
+	while (1) {
+		if(mqtt_connected) {
+			// Read the temperature and store it in a variable
+			current_temperature = read_temperature();
+			
+			// Send the current temperature over MQTT
+			app_mqtt_publish_temp(current_temperature);
+			
+			// Update and send a list of the current temperature, as well as previous readings
+			if(temperature_list_count < CONFIG_TEMP_ARRAY_MAX_LENGTH) {
+				temperature_list[temperature_list_count++] = current_temperature;
+			} else {
+				// In case the list is full, move all existing values one step up to make room for another value
+				for(int i = 0; i < (CONFIG_TEMP_ARRAY_MAX_LENGTH - 1); i++) {
+					temperature_list[i] = temperature_list[i + 1];
+				}
+				temperature_list[CONFIG_TEMP_ARRAY_MAX_LENGTH - 1] = current_temperature;
+			}
+			app_mqtt_publish_temp_array(temperature_list, temperature_list_count);
+		}
+		k_msleep(10000);
 	}
 }
 
@@ -184,3 +218,6 @@ void main(void)
 	app_mqtt_run();
 }
 
+K_THREAD_DEFINE(temp_update_thread, 2048, temp_update_thread_func, 
+				0, 0, 0, // P1, P2, P3
+				K_LOWEST_APPLICATION_THREAD_PRIO, 0, 0); // Priority, Options, Delay
