@@ -30,7 +30,7 @@ static struct net_mgmt_event_callback wifi_prov_cb;
 
 static bool mqtt_connected = false;
 
-
+// Function for enabling or disabling TWT mode
 static void wifi_set_twt(bool enable)
 {
 	struct net_if *iface = net_if_get_default();
@@ -68,7 +68,7 @@ static void handle_wifi_twt_event(struct net_mgmt_event_callback *cb)
 	LOG_INF("TWT response: CMD %s for dialog: %d and flow: %d\n",
 	      wifi_twt_setup_cmd2str[resp->setup_cmd], resp->dialog_token, resp->flow_id);
 
-	/* If accepted, then no need to print TWT params */
+	// If accepted, then no need to print TWT params
 	if (resp->setup_cmd != WIFI_TWT_SETUP_CMD_ACCEPT) {
 		LOG_INF("TWT parameters: trigger: %s wake_interval_ms: %d, interval_ms: %d\n",
 		      resp->setup.trigger ? "trigger" : "no_trigger",

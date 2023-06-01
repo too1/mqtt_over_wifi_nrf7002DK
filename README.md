@@ -236,5 +236,100 @@ Build and flash the code, and verify that the temperature graph updates are comi
 |<img src="https://github.com/too1/mqtt_over_wifi_nrf7002DK/blob/workshop_strip_down_v2/pics/mqttdash_final_screen.jpg" width="300">|
 
 ### Chapter 4 - Enable the Wi-Fi 6 Target Wake Time (TWT) feature in the code to evaulate power consumption
+-----------------------------------------------------------------------------------------------------------
+In this chapter the Target Wake Time feature introduced with Wi-Fi 6 will be evaluated to see what kind of impact this can have on the average current consumption. Code will be added to the example to enable TWT at the press of a button, and the Power Profiler Kit II will be used to measure the difference in average current. 
+
+Start by adding the following code to main.c, above the *button_handler(uint32_t button_state, uint32_t has_changed)* definition:
+```C
+// Function for enabling or disabling TWT mode
+static void wifi_set_twt(bool enable)
+{
+	struct net_if *iface = net_if_get_default();
+	struct wifi_twt_params params = { 0 };
+	uint8_t flow_id = 1;
+
+	params.negotiation_type = WIFI_TWT_INDIVIDUAL;
+	params.setup_cmd = WIFI_TWT_SETUP_CMD_REQUEST;
+	params.flow_id = flow_id;
+
+	if (enable){
+		params.operation = WIFI_TWT_SETUP;
+		params.setup.twt_interval_ms = 15000;
+		params.setup.responder = 0;
+		params.setup.trigger = 1;
+		params.setup.implicit = 1;
+		params.setup.announce = 1;
+		params.setup.twt_wake_interval_ms = 65;
+	} else {
+		params.operation = WIFI_TWT_TEARDOWN;
+		params.teardown.teardown_all = 1;
+		flow_id = (flow_id < WIFI_MAX_TWT_FLOWS) ? flow_id + 1 : 1;
+	}
+	
+	if (net_mgmt(NET_REQUEST_WIFI_TWT, iface, &params, sizeof(params))) {
+		LOG_ERR("Operation %s with negotiation type %s failed", wifi_twt_operation2str[params.operation], wifi_twt_negotiation_type2str[params.negotiation_type]);
+	}
+	LOG_INF("TWT operation %s with flow_id: %d requested", wifi_twt_operation2str[params.operation], params.flow_id);
+}
+
+static void handle_wifi_twt_event(struct net_mgmt_event_callback *cb)
+{
+	const struct wifi_twt_params *resp = (const struct wifi_twt_params *)cb->info;
+
+	LOG_INF("TWT response: CMD %s for dialog: %d and flow: %d\n",
+	      wifi_twt_setup_cmd2str[resp->setup_cmd], resp->dialog_token, resp->flow_id);
+
+	// If accepted, then no need to print TWT params
+	if (resp->setup_cmd != WIFI_TWT_SETUP_CMD_ACCEPT) {
+		LOG_INF("TWT parameters: trigger: %s wake_interval_ms: %d, interval_ms: %d\n",
+		      resp->setup.trigger ? "trigger" : "no_trigger",
+		      resp->setup.twt_wake_interval_ms,
+		      resp->setup.twt_interval_ms);
+	}
+}
+```
+Inside the *button_handler(uint32_t button_state, uint32_t has_changed)* definition change the DK_BTN2_MSK case handler to the following:
+```C
+	case DK_BTN2_MSK:
+		if (button_state & DK_BTN2_MSK){	
+			wifi_set_twt(true);
+		}
+		break;
+```
+This will ensure that when Button 2 is pressed on the DK the TWT request will be sent. 
+
+Inside the *wifi_connect_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt_event, struct net_if *iface)* function in main.c add one more case to the switch case:
+```C
+	case NET_EVENT_WIFI_TWT:
+		handle_wifi_twt_event(cb);
+		break;
+```
+Inside the main function in main.c, search for the net_mgmt_init_event_callback function and update the line to the following:
+```C
+net_mgmt_init_event_callback(&wifi_prov_cb, wifi_connect_handler, NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_TWT);
+```
+This will ensure that the NET_EVENT_WIFI_TWT event gets called when the TWT request has been processed. 
+
+Build and flash the sample, and connect the PPK2 to the nRF7002-DK as shown in the picture below:
+
+<img src="https://github.com/too1/mqtt_over_wifi_nrf7002DK/blob/workshop_strip_down_v2/pics/ppk_dk_setup.jpg" width="800">
+
+Open the Power Profiler app in nRF Connect for Desktop, and connect to your PPK2. 
+In the Power Profiler make sure *Ampere meter* mode is selected, and click *Start*. 
+
+Wait for the nRF7002-DK to connect to the wifi network and start sending data. The current profile should look something like this:
+
+<img src="https://github.com/too1/mqtt_over_wifi_nrf7002DK/blob/workshop_strip_down_v2/pics/ppk2_normal.jpg" width="800">
+
+Press Button 2 on the nRF7002-DK and verify that TWT gets enabled in the log:
+
+> [00:06:47.854,644] <inf> MQTT_OVER_WIFI: TWT operation TWT setup with flow_id: 1 requested
+> [00:06:47.915,985] <inf> MQTT_OVER_WIFI: TWT response: CMD TWT accept for dialog: 0 and flow: 1
+
+Check how the current profile changes in the Power Profile. It should now look something like this:
+
+<img src="https://github.com/too1/mqtt_over_wifi_nrf7002DK/blob/workshop_strip_down_v2/pics/ppk2_twt.jpg" width="800">
+
+Note: At the time of writing there is an issue with TWT where data communication becomes unreliable when TWT is enabled, and you might see the MQTT connection break when this mode is enabled. For the remainder of this workshop it is recommended to keep TWT disabled, to ensure reliable MQTT communication. This issue should be patched by the end of 2023. 
 
 ### Chapter 5 - Add Bluetooth functionality to the application, and enable the Nordic UART Service (NUS) in the peripheral role
