@@ -218,6 +218,7 @@ void main(void)
 	app_mqtt_run();
 }
 
+// Define an additional thread that will be used to send regular temperature updates
 K_THREAD_DEFINE(temp_update_thread, 2048, temp_update_thread_func, 
 				0, 0, 0, // P1, P2, P3
 				K_LOWEST_APPLICATION_THREAD_PRIO, 0, 0); // Priority, Options, Delay
