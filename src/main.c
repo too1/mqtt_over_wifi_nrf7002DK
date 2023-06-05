@@ -17,6 +17,10 @@
 #include <zephyr/net/mqtt.h>
 #include <dk_buttons_and_leds.h>
 
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <bluetooth/scan.h>
+
 #include "app_mqtt.h"
 
 LOG_MODULE_REGISTER(MQTT_OVER_WIFI, LOG_LEVEL_INF);
@@ -201,6 +205,51 @@ static void temp_update_thread_func(void *p)
 	}
 }
 
+void on_scan_filter_match(struct bt_scan_device_info *device_info, struct bt_scan_filter_match *filter_match, bool connectable)
+{
+	LOG_INF("MATCH");
+}
+
+BT_SCAN_CB_INIT(scan_cb, on_scan_filter_match, NULL, NULL, NULL);
+
+const uint8_t *beacon_short_name = "TempBeacon";
+
+static int bt_init(void)
+{
+	int err;
+	struct bt_scan_init_param scan_init = {
+	};
+
+	bt_scan_init(&scan_init);
+	bt_scan_cb_register(&scan_cb);
+
+	struct bt_scan_short_name beacon_adv_name = {
+		.name = beacon_short_name,
+		.min_len = strlen(beacon_short_name),
+	};
+
+	err = bt_scan_filter_add(BT_SCAN_FILTER_TYPE_NAME, &beacon_adv_name);
+	if (err) {
+		LOG_ERR("Scanning filters cannot be set (err %d)", err);
+		return err;
+	}
+
+	err = bt_scan_filter_enable(BT_SCAN_NAME_FILTER, false);
+	if (err) {
+		LOG_ERR("Filters cannot be turned on (err %d)", err);
+		return err;
+	}
+
+	err = bt_scan_start(BT_SCAN_TYPE_SCAN_ACTIVE);
+	if (err) {
+		LOG_ERR("Scanning failed to start (err %d)", err);
+		return err;
+	}
+
+	LOG_DBG("Bluetooth initialized");
+	return 0;
+}
+
 void main(void)
 {
 	int rc;
@@ -218,6 +267,8 @@ void main(void)
 		LOG_ERR("Failed to initialize the buttons library");
 	}
 
+	bt_init();
+	
 	LOG_INF("Using static Wi-Fi configuration\n");
 	char *wifi_static_ssid = NETWORK_SSID;
 	char *wifi_static_pwd = NETWORK_PWD;
