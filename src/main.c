@@ -175,6 +175,9 @@ static void wifi_connect_handler(struct net_mgmt_event_callback *cb,
 	}
 }
 
+K_SEM_DEFINE(sem_temp_from_beacon, 0, 1);
+static float temp_from_beacon;
+
 static void temp_update_thread_func(void *p)
 {
 	float current_temperature;
@@ -183,9 +186,14 @@ static void temp_update_thread_func(void *p)
 
 	while (1) {
 		if(mqtt_connected) {
-			// Read the temperature and store it in a variable
-			current_temperature = read_temperature();
-			
+			if (k_sem_take(&sem_temp_from_beacon, K_NO_WAIT) == 0)  {
+				LOG_INF("Reading temperature from beacon data");
+				current_temperature = temp_from_beacon;
+			} else {
+				LOG_INF("No beacon found. Using simulated temperature data");
+				current_temperature = read_temperature();
+			}
+
 			// Send the current temperature over MQTT
 			app_mqtt_publish_temp(current_temperature);
 			
@@ -205,48 +213,83 @@ static void temp_update_thread_func(void *p)
 	}
 }
 
-void on_scan_filter_match(struct bt_scan_device_info *device_info, struct bt_scan_filter_match *filter_match, bool connectable)
+uint8_t *beacon_short_name = "TempBeacon";
+struct adv_mfg_data {
+	uint16_t company_code;
+	uint16_t temperature; 
+	uint32_t rnd_number;  
+} __packed;
+
+static struct adv_mfg_data beacon_data;
+static bool valid_name_found, valid_manuf_data_found; 
+
+static bool data_cb(struct bt_data *data, void *user_data)
 {
-	LOG_INF("MATCH");
+	switch (data->type) {
+		case BT_DATA_NAME_COMPLETE:
+			if(memcmp(data->data, beacon_short_name, strlen(beacon_short_name)) == 0) {
+				valid_name_found = true;
+			}
+			return true;
+		case BT_DATA_MANUFACTURER_DATA:
+			if(data->data_len == sizeof(struct adv_mfg_data)) {
+				memcpy(&beacon_data, data->data, data->data_len);
+				if(beacon_data.company_code == 0x0059) {
+					LOG_DBG("NORDIC beacon found! Temp %x, Rnd %x", 
+							beacon_data.temperature, beacon_data.rnd_number);
+					valid_manuf_data_found = true;
+					return false;
+				}
+			}
+			return true;
+		default:
+			return true;
+	}
 }
 
-BT_SCAN_CB_INIT(scan_cb, on_scan_filter_match, NULL, NULL, NULL);
+void on_scan_no_match(struct bt_scan_device_info *device_info, bool connectable)
+{
+	valid_name_found = valid_manuf_data_found = false;
+	bt_data_parse(device_info->adv_data, data_cb, (void *)&device_info->recv_info->addr);
+	if(valid_name_found && valid_manuf_data_found) {
+		temp_from_beacon = (float)beacon_data.temperature * 0.25f;
+		k_sem_give(&sem_temp_from_beacon);
+	}
+}
 
-const uint8_t *beacon_short_name = "TempBeacon";
+BT_SCAN_CB_INIT(scan_cb, NULL, on_scan_no_match, NULL, NULL);
 
 static int bt_init(void)
 {
 	int err;
-	struct bt_scan_init_param scan_init = {
+
+	struct bt_le_scan_param my_scan_params = {
+		.type       = BT_LE_SCAN_TYPE_ACTIVE,
+		.options    = BT_LE_SCAN_OPT_NONE,
+		.interval   = (BT_GAP_SCAN_FAST_INTERVAL * 4),
+		.window     = BT_GAP_SCAN_FAST_WINDOW,
 	};
+
+	struct bt_scan_init_param scan_init = {
+		.scan_param = &my_scan_params,
+	};
+
+	err = bt_enable(0);
+	if (err) {
+		LOG_ERR("BT enable failed (err %i)", err);
+		return err;
+	}
 
 	bt_scan_init(&scan_init);
 	bt_scan_cb_register(&scan_cb);
 
-	struct bt_scan_short_name beacon_adv_name = {
-		.name = beacon_short_name,
-		.min_len = strlen(beacon_short_name),
-	};
-
-	err = bt_scan_filter_add(BT_SCAN_FILTER_TYPE_NAME, &beacon_adv_name);
-	if (err) {
-		LOG_ERR("Scanning filters cannot be set (err %d)", err);
-		return err;
-	}
-
-	err = bt_scan_filter_enable(BT_SCAN_NAME_FILTER, false);
-	if (err) {
-		LOG_ERR("Filters cannot be turned on (err %d)", err);
-		return err;
-	}
-
-	err = bt_scan_start(BT_SCAN_TYPE_SCAN_ACTIVE);
+	err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
 	if (err) {
 		LOG_ERR("Scanning failed to start (err %d)", err);
 		return err;
 	}
 
-	LOG_DBG("Bluetooth initialized");
+	LOG_INF("Bluetooth initialized");
 	return 0;
 }
 
@@ -268,7 +311,7 @@ void main(void)
 	}
 
 	bt_init();
-	
+
 	LOG_INF("Using static Wi-Fi configuration\n");
 	char *wifi_static_ssid = NETWORK_SSID;
 	char *wifi_static_pwd = NETWORK_PWD;
