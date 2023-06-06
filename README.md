@@ -51,7 +51,7 @@ In the later chapters the default topics will be something like *devacademy/publ
 
 While this and the following chapters will be based on the blog article and code used in chapter 1, a modified project will be used that is more streamlined for further development. Before proceeding with the steps below please check out or download the code provided below:
 
-[Modified workshop codebase](https://github.com/too1/mqtt_over_wifi_nrf7002DK/tree/workshop_strip_down_v2)
+[Modified workshop codebase](https://github.com/too1/mqtt_over_wifi_nrf7002DK)
 
 Add the project in VSCode using the Open an existing application action in the nRF Connect for VSCode interface, and ensure that you can build the sample for the nrf7002dk_nrf5340_cpuapp board. 
 
