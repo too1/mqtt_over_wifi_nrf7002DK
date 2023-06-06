@@ -24,20 +24,27 @@ This workshop will expand on this example to add the following functionality:
    - Serial Terminal 
 - Visual Studio Code (VSCode)
    - nRF Connect for VSCode extension
-- nRF Connect SDK v2.3.0 (isntalled through the Toolchain Manager)
+- nRF Connect SDK v2.3.0 (installed through the Toolchain Manager)
 
 For instructions on how to install these items, please follow the exercise [here](https://academy.nordicsemi.com/topic/exercise-1-1/)
 
 ## Workshop chapters
 
 ### Chapter 1 - Go through the chapters in the MQTT over Wi-Fi blog
--------------------------------------------------------------
+-------------------------------------------------------------------
 
-The first part of this workshop is to replicate the chapters detailed in the MQTT over Wi-Fi blog. 
+The first part of this workshop is to replicate the chapters detailed in the [MQTT over Wi-Fi blog](https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/implementing-mqtt-over-wi-fi-on-the-nrf7002-development-kit). 
 Hint: For Windows users the download link to the required Protocol Buffers service is a bit hard to find, direct link [here](https://github.com/protocolbuffers/protobuf/releases/download/v23.2/protoc-23.2-win64.zip). 
 
 Go through all the stages of the blog, and make sure to select Option A in Stage 1 to ensure you can build the application successfully in VSCode. 
 To save time the chapters needed to set up the *LED2 On* and *LED2 Off* buttons can be omitted, as these buttons will not be needed in later chapters. 
+
+Make sure to use an open Wi-Fi network for the connected devices. For the workshop a Wi-Fi 6 router will be set up, and login credentials will be provided. Please don't connect to this network with PC's or phones, the Wi-Fi router should be used for the nRF7002-DK's only. 
+
+***Don't forget to use unique MQTT publish/subscribe topics!!***
+Find a unique identifier/name and use it to personalize the topics, to avoid interfering with others doing the same workshop. 
+
+In the later chapters the default topics will be something like *devacademy/publish/emeaworkshop/temp*. Make sure to replace "emeaworkshop" with your own name or identifier, and use the same one when setting up the MQTT Dashboard app. 
 
 ### Chapter 2 - Add MQTT topics to request and send a temperature update
 ---------------------------------------------------------------------
@@ -332,4 +339,115 @@ Check how the current profile changes in the Power Profile. It should now look s
 
 Note: At the time of writing there is an issue with TWT where data communication becomes unreliable when TWT is enabled, and you might see the MQTT connection break when this mode is enabled. For the remainder of this workshop it is recommended to keep TWT disabled, to ensure reliable MQTT communication. This issue should be patched by the end of 2023. 
 
-### Chapter 5 - Add Bluetooth functionality to the application, and enable the Nordic UART Service (NUS) in the peripheral role
+### Chapter 5 - Add Bluetooth functionality to the application, and look for a beacon advertising temperature information
+-------------------------------------------------------------------------------------------------------------------------
+In this chapter Bluetooth functionality will be added to the example in order to scan for Bluetooth beacons in the area. An advertiser has been set up in advance which will advertise the name "TempBeacon", and include a manufacturer specific data field which contains a temperature sensor reading, using the Nordic company ID of 0x0059. This temperature value can be used to update the temperature over MQTT to use real data rather than simulated values. 
+
+The temperature data is stored as a 16-bit integer value, with a unit of 0.25C. This value needs to be converted to float before being sent over MQTT. 
+
+Start by adding the following lines to prj.conf:
+```C
+## Bluetooth configuration
+CONFIG_BT=y
+CONFIG_BT_OBSERVER=y
+CONFIG_BT_DEBUG_LOG=y
+CONFIG_BT_SCAN=y
+```
+
+Add the following includes to the top of main.c:
+```C
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <bluetooth/scan.h>
+```
+A semaphore will be defined to signal when a valid beacon packet was received over Bluetooth, in addition to a variable used to store the temperature value received. Add the following lines of code to main.c, somewhere above the implementation of the *temp_update_thread_func()* function:
+```C
+K_SEM_DEFINE(sem_temp_from_beacon, 0, 1);
+static float temp_from_beacon;
+```
+In order to initialize the Bluetooth stack, and process the incoming beacon packets, add the following code to main.c:
+```C
+uint8_t *beacon_short_name = "TempBeacon";
+struct adv_mfg_data {
+	uint16_t company_code;
+	uint16_t temperature; 
+	uint32_t rnd_number;  
+} __packed;
+
+static struct adv_mfg_data beacon_data;
+static bool valid_name_found, valid_manuf_data_found; 
+
+static bool data_cb(struct bt_data *data, void *user_data)
+{
+	switch (data->type) {
+		case BT_DATA_NAME_COMPLETE:
+			if(memcmp(data->data, beacon_short_name, strlen(beacon_short_name)) == 0) {
+				valid_name_found = true;
+			}
+			return true;
+		case BT_DATA_MANUFACTURER_DATA:
+			if(data->data_len == sizeof(struct adv_mfg_data)) {
+				memcpy(&beacon_data, data->data, data->data_len);
+				if(beacon_data.company_code == 0x0059) {
+					LOG_DBG("NORDIC beacon found! Temp %x, Rnd %x", 
+							beacon_data.temperature, beacon_data.rnd_number);
+					valid_manuf_data_found = true;
+					return false;
+				}
+			}
+			return true;
+		default:
+			return true;
+	}
+}
+
+void on_scan_no_match(struct bt_scan_device_info *device_info, bool connectable)
+{
+	valid_name_found = valid_manuf_data_found = false;
+	bt_data_parse(device_info->adv_data, data_cb, (void *)&device_info->recv_info->addr);
+	if(valid_name_found && valid_manuf_data_found) {
+		temp_from_beacon = (float)beacon_data.temperature * 0.25f;
+		k_sem_give(&sem_temp_from_beacon);
+	}
+}
+
+BT_SCAN_CB_INIT(scan_cb, NULL, on_scan_no_match, NULL, NULL);
+
+static int bt_init(void)
+{
+	int err;
+
+	struct bt_le_scan_param my_scan_params = {
+		.type       = BT_LE_SCAN_TYPE_ACTIVE,
+		.options    = BT_LE_SCAN_OPT_NONE,
+		.interval   = (BT_GAP_SCAN_FAST_INTERVAL * 4),
+		.window     = BT_GAP_SCAN_FAST_WINDOW,
+	};
+
+	struct bt_scan_init_param scan_init = {
+		.scan_param = &my_scan_params,
+	};
+
+	err = bt_enable(0);
+	if (err) {
+		LOG_ERR("BT enable failed (err %i)", err);
+		return err;
+	}
+
+	bt_scan_init(&scan_init);
+	bt_scan_cb_register(&scan_cb);
+
+	err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
+	if (err) {
+		LOG_ERR("Scanning failed to start (err %d)", err);
+		return err;
+	}
+
+	LOG_INF("Bluetooth initialized");
+	return 0;
+}
+```
+Inside the main function in main.c, after the call to *dk_buttons_init(button_handler)*, call the *bt_init()* function to initialize the Bluetooth stack. 
+
+Inside the while loop in the *temp_update_thread_func(..)* function, add a check to see if the *sem_temp_from_beacon* semaphore is available. If you are able to acquire the semaphore, use the temperature value stored in the *temp_from_beacon* variable rather than call the *read_temperature()* function, as done in earlier chapters. 
+
